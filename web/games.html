@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Toutes les parties – Chess</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .games-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .games-header h1 { font-size: 20px; font-weight: 700; flex: 1; }
+
+    .month-selector {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+    .month-selector:focus { border-color: var(--accent); }
+
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text-muted);
+      padding: 4px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .filter-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .filter-btn:hover:not(.active) { border-color: #555; color: var(--text); }
+
+    .game-card {
+      grid-template-columns: auto 1fr auto auto;
+    }
+
+    /* Bouton analyser */
+    .analyze-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .analyze-btn.not-analyzed {
+      background: rgba(129,182,76,0.15);
+      color: var(--accent);
+      border: 1px solid rgba(129,182,76,0.3);
+    }
+    .analyze-btn.not-analyzed:hover {
+      background: rgba(129,182,76,0.25);
+    }
+    .analyze-btn.pending {
+      background: rgba(158,158,158,0.1);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      cursor: default;
+    }
+    .analyze-btn.done {
+      background: rgba(124,185,244,0.15);
+      color: var(--excellent);
+      border: 1px solid rgba(124,185,244,0.3);
+      text-decoration: none;
+    }
+    .analyze-btn.done:hover { background: rgba(124,185,244,0.25); }
+    .analyze-btn.error {
+      background: rgba(244,67,54,0.1);
+      color: var(--blunder);
+      border: 1px solid rgba(244,67,54,0.2);
+      cursor: pointer;
+    }
+
+    .month-stats {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .month-stats span { display: flex; align-items: center; gap: 4px; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { display: inline-block; animation: spin 0.7s linear infinite; }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <a href="index.html" style="color:var(--text-muted);font-size:20px;line-height:1;padding:4px 6px;border-radius:4px;text-decoration:none" title="Accueil">‹</a>
+  <div class="logo">♟ <span>Chess</span>Analysis</div>
+  <nav style="margin-left:auto;display:flex;gap:4px">
+    <a href="index.html" style="color:var(--text-muted);font-size:13px;padding:6px 10px;border-radius:4px" onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background=''">Semaine</a>
+    <a href="games.html" style="color:var(--accent);font-size:13px;padding:6px 10px;border-radius:4px;background:var(--bg-hover)">Toutes les parties</a>
+  </nav>
+</header>
+
+<main class="index-container">
+  <div class="games-header">
+    <h1>Toutes les parties</h1>
+    <select class="month-selector" id="month-select" onchange="loadMonth(this.value)">
+      <option value="">Chargement…</option>
+    </select>
+  </div>
+
+  <div class="filter-bar" id="filter-bar" style="display:none">
+    <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">Toutes</button>
+    <button class="filter-btn" data-filter="win"  onclick="setFilter('win',  this)">Victoires</button>
+    <button class="filter-btn" data-filter="loss" onclick="setFilter('loss', this)">Défaites</button>
+    <button class="filter-btn" data-filter="draw" onclick="setFilter('draw', this)">Nulles</button>
+  </div>
+
+  <div class="month-stats" id="month-stats"></div>
+
+  <div id="games-list">
+    <div class="loading"><div class="spinner"></div> Chargement des archives…</div>
+  </div>
+</main>
+
+<script>
+const RESULT_LABELS = { win: 'V', loss: 'D', draw: 'N' };
+let allGames = [];
+let currentFilter = 'all';
+const pollingIntervals = {};
+
+function formatDate(ts) {
+  return new Date(ts * 1000).toLocaleDateString('fr-FR', {
+    weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderGames();
+}
+
+// ── Charger les archives ────────────────────────────────────────
+async function loadArchives() {
+  try {
+    const r = await fetch('/api/archives');
+    const data = await r.json();
+    const sel = document.getElementById('month-select');
+    sel.innerHTML = data.archives.map(m => {
+      const [y, mo] = m.split('/');
+      const d = new Date(y, mo - 1);
+      const label = d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+      return `<option value="${m}">${label}</option>`;
+    }).join('');
+    if (data.archives.length > 0) loadMonth(data.archives[0]);
+  } catch(e) {
+    document.getElementById('games-list').innerHTML =
+      `<div class="empty-state"><div class="icon">❌</div><h2>Erreur de connexion à l'API</h2><p>${e.message}</p></div>`;
+  }
+}
+
+// ── Charger un mois ─────────────────────────────────────────────
+async function loadMonth(monthStr) {
+  if (!monthStr) return;
+  document.getElementById('games-list').innerHTML =
+    '<div class="loading"><div class="spinner"></div> Chargement…</div>';
+  document.getElementById('month-stats').innerHTML = '';
+  document.getElementById('filter-bar').style.display = 'none';
+
+  const [year, month] = monthStr.split('/');
+  try {
+    const r = await fetch(`/api/games/${year}/${month}`);
+    const data = await r.json();
+    allGames = (data.games || []).reverse(); // plus récent en premier
+    document.getElementById('filter-bar').style.display = 'flex';
+    renderGames();
+  } catch(e) {
+    document.getElementById('games-list').innerHTML =
+      `<div class="empty-state"><div class="icon">❌</div><h2>Erreur</h2><p>${e.message}</p></div>`;
+  }
+}
+
+// ── Rendu liste ─────────────────────────────────────────────────
+function renderGames() {
+  const filtered = currentFilter === 'all'
+    ? allGames
+    : allGames.filter(g => getResult(g) === currentFilter);
+
+  // Stats du mois
+  const wins   = allGames.filter(g => getResult(g) === 'win').length;
+  const losses = allGames.filter(g => getResult(g) === 'loss').length;
+  const draws  = allGames.filter(g => getResult(g) === 'draw').length;
+  document.getElementById('month-stats').innerHTML = `
+    <span>${allGames.length} parties</span>
+    <span style="color:var(--win)">▲ ${wins}V</span>
+    <span style="color:var(--loss)">▼ ${losses}D</span>
+    <span style="color:var(--draw)">= ${draws}N</span>
+  `;
+
+  if (filtered.length === 0) {
+    document.getElementById('games-list').innerHTML =
+      '<div class="empty-state"><div class="icon">🎮</div><h2>Aucune partie</h2></div>';
+    return;
+  }
+
+  const html = filtered.map(g => gameCardHtml(g)).join('');
+  document.getElementById('games-list').innerHTML =
+    `<div class="games-list">${html}</div>`;
+
+  // Relancer le polling pour les analyses en cours
+  filtered.filter(g => pollingIntervals[g.uuid] === 'pending').forEach(g => pollStatus(g));
+}
+
+function getResult(g) {
+  const me = g.white?.username?.toLowerCase() === 'arata4526' ? g.white : g.black;
+  const res = me?.result || '';
+  if (res === 'win') return 'win';
+  if (['checkmated','resigned','timeout','abandoned'].includes(res)) return 'loss';
+  return 'draw';
+}
+
+function gameCardHtml(g) {
+  const result   = getResult(g);
+  const isWhite  = g.white?.username?.toLowerCase() === 'arata4526';
+  const opp      = isWhite ? g.black : g.white;
+  const opening  = (g.pgn?.match(/\[Opening "([^"]+)"\]/) || [])[1] || '–';
+  const openingShort = opening.split(':')[0];
+
+  const label = RESULT_LABELS[result] || 'N';
+  const uuid  = g.uuid;
+
+  // État du bouton
+  let btnHtml;
+  if (g.analyzed || pollingIntervals[uuid] === 'done') {
+    btnHtml = `<a class="analyze-btn done" href="game.html?id=${uuid}">📊 Voir analyse</a>`;
+  } else if (pollingIntervals[uuid] === 'pending') {
+    btnHtml = `<button class="analyze-btn pending" id="btn-${uuid}"><span class="spin">⟳</span> Analyse…</button>`;
+  } else if (pollingIntervals[uuid] === 'error') {
+    btnHtml = `<button class="analyze-btn error" onclick="analyzeGame(${JSON.stringify(g).replace(/"/g, '&quot;')})">⚠ Réessayer</button>`;
+  } else {
+    btnHtml = `<button class="analyze-btn not-analyzed" onclick="analyzeGame(${JSON.stringify(g).replace(/"/g, '&quot;')})">⚡ Analyser</button>`;
+  }
+
+  return `
+  <div class="game-card" style="cursor:default">
+    <div class="result-badge ${result}">${label}</div>
+    <div class="game-info">
+      <div class="opponent">
+        vs <strong>${opp?.username || '?'}</strong>
+        <span style="color:var(--text-muted);font-weight:400">(${opp?.rating || '?'})</span>
+      </div>
+      <div class="meta">
+        <span class="time-badge">${g.time_class || '–'}</span>
+        <span>${openingShort}</span>
+        <span style="margin-left:auto;color:var(--text-muted)">${formatDate(g.end_time)}</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center" id="btn-wrap-${uuid}">
+      ${btnHtml}
+    </div>
+  </div>`;
+}
+
+// ── Déclencher l'analyse ─────────────────────────────────────────
+async function analyzeGame(g) {
+  const uuid = g.uuid;
+  pollingIntervals[uuid] = 'pending';
+
+  // Mettre à jour le bouton immédiatement
+  const wrap = document.getElementById(`btn-wrap-${uuid}`);
+  if (wrap) wrap.innerHTML = `<button class="analyze-btn pending"><span class="spin">⟳</span> Analyse…</button>`;
+
+  try {
+    await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(g),
+    });
+    pollStatus(g);
+  } catch(e) {
+    pollingIntervals[uuid] = 'error';
+    const w = document.getElementById(`btn-wrap-${uuid}`);
+    if (w) w.innerHTML = `<button class="analyze-btn error" onclick="analyzeGame(${JSON.stringify(g).replace(/"/g,'&quot;')})">⚠ Réessayer</button>`;
+  }
+}
+
+// ── Polling statut ───────────────────────────────────────────────
+function pollStatus(g) {
+  const uuid = g.uuid;
+  const interval = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/status/${uuid}`);
+      const data = await r.json();
+
+      if (data.status === 'done') {
+        clearInterval(interval);
+        pollingIntervals[uuid] = 'done';
+        const wrap = document.getElementById(`btn-wrap-${uuid}`);
+        if (wrap) wrap.innerHTML = `<a class="analyze-btn done" href="game.html?id=${uuid}">📊 Voir analyse</a>`;
+      } else if (data.status === 'error') {
+        clearInterval(interval);
+        pollingIntervals[uuid] = 'error';
+        const wrap = document.getElementById(`btn-wrap-${uuid}`);
+        if (wrap) wrap.innerHTML = `<button class="analyze-btn error" onclick="analyzeGame(${JSON.stringify(g).replace(/"/g,'&quot;')})">⚠ Réessayer</button>`;
+      }
+    } catch(e) {
+      clearInterval(interval);
+    }
+  }, 2500);
+}
+
+// ── Mettre à jour le lien "Semaine" → "Toutes les parties" dans index.html ──
+loadArchives();
+</script>
+</body>
+</html>
