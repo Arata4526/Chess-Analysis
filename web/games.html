@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="api-key" content="__API_KEY__">
-  <title>Toutes les parties – Chess</title>
+<title>Toutes les parties – Chess</title>
   <link rel="stylesheet" href="css/style.css">
   <style>
     .games-header {
@@ -340,11 +339,10 @@ async function analyzeGame(g) {
   const wrap = document.getElementById(`btn-wrap-${uuid}`);
   if (wrap) wrap.innerHTML = `<button class="analyze-btn pending"><span class="spin">⟳</span> Analyse…</button>`;
 
-  const apiKey = document.querySelector('meta[name="api-key"]')?.content || '';
   try {
     await fetch('/api/analyze', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(g),
     });
     pollStatus(g);
