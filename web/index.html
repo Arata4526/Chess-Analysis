@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chess Analysis – Arata4526</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="logo">♟ <span>Chess</span>Analysis</div>
+  <span style="color:var(--text-muted);font-size:13px;">Arata4526</span>
+</header>
+
+<main class="index-container">
+  <div id="app">
+    <div class="loading"><div class="spinner"></div> Chargement de l'analyse…</div>
+  </div>
+</main>
+
+<script>
+const SYMBOLS = {
+  blunder: '??', mistake: '?', inaccuracy: '?!', good: '!', excellent: '!!', best: ''
+};
+const RESULT_LABELS = { win: 'V', loss: 'D', draw: 'N' };
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function markdownToHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/gs, '<ol>$1</ol>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/^(?!<[hol])/gm, '')
+    .trim();
+}
+
+async function loadData() {
+  try {
+    const res = await fetch('data/latest.json?t=' + Date.now());
+    if (!res.ok) throw new Error('Pas encore d\'analyse disponible');
+    return await res.json();
+  } catch(e) {
+    return null;
+  }
+}
+
+function renderStats(stats) {
+  const byClass = stats.by_time_class || {};
+  let totalWins = 0, totalLosses = 0, totalDraws = 0;
+  Object.values(byClass).forEach(tc => {
+    totalWins   += tc.wins   || 0;
+    totalLosses += tc.losses || 0;
+    totalDraws  += tc.draws  || 0;
+  });
+
+  const totalBlunders = Object.values(stats.errors_by_phase || {})
+    .reduce((s, p) => s + (p.blunders || 0), 0);
+
+  return `
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="value">${stats.total_games || 0}</div>
+      <div class="label">Parties</div>
+    </div>
+    <div class="stat-card accuracy">
+      <div class="value">${(stats.avg_accuracy || 0).toFixed(1)}%</div>
+      <div class="label">Précision moy.</div>
+    </div>
+    <div class="stat-card wins">
+      <div class="value">${totalWins}</div>
+      <div class="label">Victoires</div>
+    </div>
+    <div class="stat-card losses">
+      <div class="value">${totalLosses}</div>
+      <div class="label">Défaites</div>
+    </div>
+    <div class="stat-card">
+      <div class="value">${totalDraws}</div>
+      <div class="label">Nulles</div>
+    </div>
+    <div class="stat-card blunders">
+      <div class="value">${totalBlunders}</div>
+      <div class="label">Gaffes totales</div>
+    </div>
+  </div>`;
+}
+
+function renderCoaching(coaching) {
+  if (!coaching) return '';
+  return `
+  <div class="coaching-panel">
+    <div class="panel-title">🤖 Coaching IA de la semaine</div>
+    <div>${markdownToHtml(coaching)}</div>
+  </div>`;
+}
+
+function renderGames(games) {
+  if (!games || games.length === 0) {
+    return '<div class="empty-state"><div class="icon">🎮</div><h2>Aucune partie cette semaine</h2><p>Joue quelques parties sur Chess.com !</p></div>';
+  }
+
+  const rows = games.map(g => {
+    const badgeClass = g.result || 'draw';
+    const label = RESULT_LABELS[g.result] || 'N';
+    const acc = typeof g.accuracy === 'number' ? g.accuracy.toFixed(1) + '%' : '–';
+    const blunders = g.blunders || 0;
+    const mistakes = g.mistakes || 0;
+    const opening = g.opening ? g.opening.split(':')[0] : '–';
+
+    return `
+    <a class="game-card" href="game.html?id=${g.uuid}">
+      <div class="result-badge ${badgeClass}">${label}</div>
+      <div class="game-info">
+        <div class="opponent">vs ${g.opponent || '?'} <span style="color:var(--text-muted);font-weight:400">(${g.opponent_rating || '?'})</span></div>
+        <div class="meta">
+          <span class="time-badge">${g.time_class || '–'}</span>
+          <span>${opening}</span>
+          <span style="margin-left:auto;color:var(--text-muted)">${formatDate(g.date)}</span>
+        </div>
+      </div>
+      <div class="game-right">
+        <div class="game-accuracy-val">${acc}</div>
+        <div class="game-errors">
+          ${blunders > 0 ? `<span class="err-dot" style="color:var(--blunder)">⬥${blunders}??</span>` : ''}
+          ${mistakes > 0 ? `<span class="err-dot" style="color:var(--mistake)">⬥${mistakes}?</span>` : ''}
+        </div>
+      </div>
+    </a>`;
+  });
+
+  return `
+  <div class="section-title">Parties de la semaine (${games.length})</div>
+  <div class="games-list">${rows.join('')}</div>`;
+}
+
+async function init() {
+  const app = document.getElementById('app');
+  const data = await loadData();
+
+  if (!data) {
+    app.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">♟</div>
+        <h2>Aucune analyse disponible</h2>
+        <p>Le script hebdomadaire n'a pas encore tourné.<br>Lance <code>python3 analysis/weekly_analysis.py</code> pour commencer.</p>
+      </div>`;
+    return;
+  }
+
+  const weekStr = data.week_start
+    ? `Semaine du ${new Date(data.week_start).toLocaleDateString('fr-FR', {day:'numeric',month:'long',year:'numeric'})}`
+    : '';
+
+  app.innerHTML = `
+    <div class="week-header">
+      <h1>Analyse hebdomadaire</h1>
+      <div class="subtitle">${weekStr} · Généré le ${new Date(data.generated_at).toLocaleString('fr-FR')}</div>
+    </div>
+    ${renderStats(data.stats || {})}
+    ${renderCoaching(data.coaching)}
+    ${renderGames(data.games || [])}
+  `;
+}
+
+init();
+</script>
+</body>
+</html>

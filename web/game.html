@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analyse partie – Chess</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Chessground (Lichess board) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessground/9.1.0/assets/chessground.base.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessground/9.1.0/assets/chessground.brown.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessground/9.1.0/assets/chessground.cburnett.css">
+  <style>
+    /* Pièces cburnett style Chess.com */
+    .cg-wrap { display: block; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <button class="back-btn" onclick="history.length>1 ? history.back() : location.href='index.html'">‹</button>
+  <div class="logo">♟ <span>Chess</span>Analysis</div>
+  <span id="header-title" style="color:var(--text-muted);font-size:13px;margin-left:4px;"></span>
+</header>
+
+<div id="app" style="display:flex;align-items:center;justify-content:center;height:calc(100vh - 52px)">
+  <div class="loading"><div class="spinner"></div> Chargement…</div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chessground/9.1.0/chessground.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chess.js@1.0.0/dist/cjs/chess.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+
+<script>
+const SYMBOLS = {
+  blunder: '??', mistake: '?', inaccuracy: '?!',
+  good: '!', excellent: '!!', best: '', 'n/a': ''
+};
+const SYM_CLASS = {
+  blunder: 'sym-blunder', mistake: 'sym-mistake', inaccuracy: 'sym-inaccuracy',
+  good: 'sym-good', excellent: 'sym-excellent', best: 'sym-best'
+};
+
+let gameData = null;
+let board = null;
+let evalChart = null;
+let currentHalfMove = 0;
+let flipped = false;
+
+// ── Charger le JSON ──────────────────────────────────────────────
+const uuid = new URLSearchParams(location.search).get('id');
+
+async function loadGame() {
+  if (!uuid) return null;
+  const res = await fetch(`data/${uuid}.json?t=${Date.now()}`);
+  if (!res.ok) throw new Error('Partie introuvable');
+  return await res.json();
+}
+
+// ── Eval helpers ────────────────────────────────────────────────
+function cpToPercent(cp) {
+  // Convertit centipions en pourcentage 0-100 (blanc en bas)
+  const clamped = Math.max(-800, Math.min(800, cp || 0));
+  return 50 + (clamped / 800) * 50;
+}
+
+function formatEval(cp) {
+  if (cp === undefined || cp === null) return '0.0';
+  if (Math.abs(cp) >= 9000) return cp > 0 ? '#' : '-#';
+  return (cp / 100).toFixed(1).replace('-', '−');
+}
+
+// ── Initialiser l'échiquier ──────────────────────────────────────
+function initBoard() {
+  const wrap = document.getElementById('chess-board-wrap');
+  board = Chessground(wrap, {
+    fen: 'start',
+    orientation: gameData.meta.player_color === 'black' ? 'black' : 'white',
+    movable: { free: false, color: null },
+    draggable: { enabled: false },
+    animation: { enabled: true, duration: 150 },
+    highlight: { lastMove: true, check: true },
+    coordinates: true,
+  });
+  flipped = gameData.meta.player_color === 'black';
+}
+
+// ── Graphe évaluation ────────────────────────────────────────────
+function initChart() {
+  const moves = gameData.moves;
+  const labels = moves.map((m, i) => {
+    const n = Math.ceil((i + 1) / 2);
+    return m.color === 'white' ? `${n}.` : '';
+  });
+  const evals = moves.map(m => {
+    const v = m.eval_after ?? 0;
+    return Math.max(-800, Math.min(800, v));
+  });
+
+  const ctx = document.getElementById('eval-chart').getContext('2d');
+  evalChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: evals,
+        borderColor: '#81b64c',
+        borderWidth: 1.5,
+        backgroundColor: (ctx) => {
+          const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 84);
+          g.addColorStop(0, 'rgba(129,182,76,0.3)');
+          g.addColorStop(1, 'rgba(129,182,76,0)');
+          return g;
+        },
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        pointHoverBackgroundColor: '#fff',
+      }]
+    },
+    options: {
+      responsive: false,
+      animation: false,
+      scales: {
+        x: { display: false },
+        y: {
+          min: -800, max: 800,
+          grid: { color: '#3d3d3d' },
+          ticks: {
+            color: '#9e9e9e', font: { size: 9 },
+            callback: v => v === 0 ? '0' : (v > 0 ? '+' + (v/100).toFixed(0) : (v/100).toFixed(0))
+          }
+        }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const m = gameData.moves[ctx.dataIndex];
+              return ` ${m.san} — ${formatEval(m.eval_after)}`;
+            }
+          },
+          backgroundColor: '#2c2c2c',
+          borderColor: '#3d3d3d',
+          borderWidth: 1,
+          titleColor: '#9e9e9e',
+          bodyColor: '#e0e0e0',
+        },
+        annotation: {
+          annotations: {
+            cursor: {
+              type: 'line',
+              xMin: -1, xMax: -1,
+              borderColor: 'rgba(255,255,255,0.4)',
+              borderWidth: 1,
+            }
+          }
+        }
+      },
+      onClick: (e, elements) => {
+        if (elements.length > 0) goToMove(elements[0].index + 1);
+      }
+    }
+  });
+}
+
+// ── Navigation ───────────────────────────────────────────────────
+function goToMove(halfMoveIndex) {
+  const moves = gameData.moves;
+  currentHalfMove = Math.max(0, Math.min(moves.length, halfMoveIndex));
+
+  // Position FEN
+  const fen = currentHalfMove === 0
+    ? 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+    : moves[currentHalfMove - 1].fen_after;
+
+  // Dernier coup à surbrillance
+  let lastMove = undefined;
+  if (currentHalfMove > 0) {
+    const m = moves[currentHalfMove - 1];
+    lastMove = [m.uci.slice(0, 2), m.uci.slice(2, 4)];
+  }
+
+  board.set({ fen, lastMove, check: false });
+
+  // Eval bar
+  const cp = currentHalfMove === 0 ? 0 : moves[currentHalfMove - 1].eval_after;
+  const pct = cpToPercent(cp);
+  document.getElementById('eval-fill').style.height = pct + '%';
+  document.getElementById('eval-label').textContent = formatEval(cp);
+
+  // Highlight coup actif dans la liste
+  document.querySelectorAll('.move-cell').forEach(el => el.classList.remove('active'));
+  if (currentHalfMove > 0) {
+    const cell = document.getElementById(`mc-${currentHalfMove}`);
+    if (cell) {
+      cell.classList.add('active');
+      cell.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+
+  // Ligne verticale dans le graphe
+  if (evalChart) {
+    evalChart.options.plugins.annotation.annotations.cursor.xMin = currentHalfMove - 1;
+    evalChart.options.plugins.annotation.annotations.cursor.xMax = currentHalfMove - 1;
+    evalChart.update('none');
+  }
+}
+
+// ── Rendu liste de coups ─────────────────────────────────────────
+function renderMoveList() {
+  const moves = gameData.moves;
+  const container = document.getElementById('move-list');
+  let html = '';
+  for (let i = 0; i < moves.length; i += 2) {
+    const w = moves[i];
+    const b = moves[i + 1];
+    const num = w.move_number;
+    const wSym = w.is_player_move ? (SYMBOLS[w.classification] || '') : '';
+    const bSym = b && b.is_player_move ? (SYMBOLS[b.classification] || '') : '';
+    const wCls = w.is_player_move ? (SYM_CLASS[w.classification] || '') : '';
+    const bCls = b && b.is_player_move ? (SYM_CLASS[b.classification] || '') : '';
+
+    html += `<div class="move-row">
+      <span class="move-num">${num}.</span>
+      <span class="move-cell" id="mc-${i+1}" onclick="goToMove(${i+1})">
+        ${w.san}${wSym ? `<span class="move-symbol ${wCls}">${wSym}</span>` : ''}
+      </span>
+      ${b ? `<span class="move-cell" id="mc-${i+2}" onclick="goToMove(${i+2})">
+        ${b.san}${bSym ? `<span class="move-symbol ${bCls}">${bSym}</span>` : ''}
+      </span>` : '<span></span>'}
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+// ── Rendu header partie ───────────────────────────────────────────
+function renderGameHeader() {
+  const meta = gameData.meta;
+  const summary = gameData.summary;
+
+  const isWhite = meta.player_color === 'white';
+  const playerSide = isWhite ? meta.white : meta.black;
+  const oppSide    = isWhite ? meta.black : meta.white;
+
+  document.getElementById('header-title').textContent =
+    `vs ${oppSide.username} · ${meta.time_class} · ${meta.date}`;
+
+  // Joueur du haut (adversaire)
+  document.getElementById('player-top-name').textContent = oppSide.username;
+  document.getElementById('player-top-rating').textContent = `(${oppSide.rating})`;
+  document.getElementById('player-top-dot').className = `player-color-dot ${isWhite ? 'black' : 'white'}`;
+
+  // Joueur du bas (toi)
+  document.getElementById('player-bot-name').textContent = playerSide.username;
+  document.getElementById('player-bot-rating').textContent = `(${playerSide.rating})`;
+  document.getElementById('player-bot-dot').className = `player-color-dot ${isWhite ? 'white' : 'black'}`;
+
+  // Opening
+  document.getElementById('opening-name').textContent = meta.opening || 'Ouverture inconnue';
+
+  // Accuracy + erreurs
+  const acc = summary.accuracy ? summary.accuracy.toFixed(1) + '%' : '–';
+  document.getElementById('accuracy-val').textContent = acc;
+
+  const chips = [];
+  if (summary.blunders > 0) chips.push(`<span class="err-chip blunder">⬥ ${summary.blunders} ??</span>`);
+  if (summary.mistakes > 0) chips.push(`<span class="err-chip mistake">⬥ ${summary.mistakes} ?</span>`);
+  if (summary.inaccuracies > 0) chips.push(`<span class="err-chip inaccuracy">⬥ ${summary.inaccuracies} ?!</span>`);
+  document.getElementById('error-chips').innerHTML = chips.join('') || '<span style="color:var(--text-muted);font-size:12px">Bonne partie !</span>';
+
+  // Coaching
+  const coaching = summary.coaching || '';
+  document.getElementById('coaching-text').textContent = coaching || 'Analyse en cours…';
+}
+
+// ── Clavier ──────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (!gameData) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); goToMove(currentHalfMove + 1); }
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); goToMove(currentHalfMove - 1); }
+  if (e.key === 'ArrowUp')    { e.preventDefault(); goToMove(0); }
+  if (e.key === 'ArrowDown')  { e.preventDefault(); goToMove(gameData.moves.length); }
+});
+
+// ── Init ─────────────────────────────────────────────────────────
+async function init() {
+  const app = document.getElementById('app');
+
+  if (!uuid) {
+    app.innerHTML = `<div class="empty-state"><div class="icon">❌</div><h2>ID de partie manquant</h2><p><a href="index.html">Retour à l'accueil</a></p></div>`;
+    return;
+  }
+
+  try {
+    gameData = await loadGame();
+  } catch(e) {
+    app.innerHTML = `<div class="empty-state"><div class="icon">❌</div><h2>Partie introuvable</h2><p><a href="index.html">Retour à l'accueil</a></p></div>`;
+    return;
+  }
+
+  // Construire la structure HTML
+  app.id = '';
+  app.removeAttribute('style');
+  app.className = 'game-layout';
+  app.innerHTML = `
+    <!-- Barre d'évaluation -->
+    <div class="eval-bar-container">
+      <div class="eval-bar">
+        <div class="eval-bar-fill" id="eval-fill" style="height:50%"></div>
+      </div>
+      <div class="eval-label" id="eval-label">0.0</div>
+    </div>
+
+    <!-- Zone échiquier -->
+    <div class="board-area">
+      <div class="player-info">
+        <div class="player-avatar">♟</div>
+        <span class="player-name" id="player-top-name"></span>
+        <span class="player-rating" id="player-top-rating"></span>
+        <div class="player-color-dot" id="player-top-dot"></div>
+      </div>
+
+      <div id="chess-board-wrap">
+        <div class="cg-wrap"></div>
+      </div>
+
+      <div class="player-info">
+        <div class="player-avatar">♙</div>
+        <span class="player-name" id="player-bot-name"></span>
+        <span class="player-rating" id="player-bot-rating"></span>
+        <div class="player-color-dot" id="player-bot-dot"></div>
+      </div>
+
+      <div class="board-controls">
+        <button class="ctrl-btn" onclick="goToMove(0)" title="Début (↑)">⏮</button>
+        <button class="ctrl-btn" onclick="goToMove(currentHalfMove - 1)" title="Précédent (←)">◀</button>
+        <button class="ctrl-btn" onclick="goToMove(currentHalfMove + 1)" title="Suivant (→)">▶</button>
+        <button class="ctrl-btn" onclick="goToMove(gameData.moves.length)" title="Fin (↓)">⏭</button>
+        <button class="ctrl-btn flip-btn" onclick="toggleFlip()" title="Retourner l'échiquier">⇅</button>
+      </div>
+    </div>
+
+    <!-- Panel droite -->
+    <div class="right-panel">
+      <div class="game-meta-header">
+        <div class="opening-name" id="opening-name"></div>
+        <div class="accuracy-row">
+          <div class="acc-block">
+            <div class="acc-pct" id="accuracy-val">–</div>
+            <div class="acc-side">précision</div>
+          </div>
+        </div>
+        <div class="error-summary" id="error-chips"></div>
+      </div>
+
+      <div class="moves-container">
+        <div id="move-list"></div>
+      </div>
+
+      <div class="coaching-section">
+        <div class="coach-title">🤖 Coaching IA</div>
+        <p id="coaching-text"></p>
+      </div>
+    </div>
+
+    <!-- Graphe évaluation -->
+    <div class="chart-section">
+      <canvas id="eval-chart" height="84"></canvas>
+    </div>
+  `;
+
+  initBoard();
+  renderGameHeader();
+  renderMoveList();
+  initChart();
+  goToMove(0);
+}
+
+function toggleFlip() {
+  flipped = !flipped;
+  board.set({ orientation: flipped ? 'black' : 'white' });
+}
+
+init();
+</script>
+</body>
+</html>

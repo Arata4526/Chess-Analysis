@@ -1,0 +1,7 @@
+analysis/.env
+analysis/venv/
+data/*.json
+!data/.gitkeep
+__pycache__/
+*.pyc
+.DS_Store
