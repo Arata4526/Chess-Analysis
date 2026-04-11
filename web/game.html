@@ -473,7 +473,9 @@ function renderGameHeader() {
   if (s.mistakes > 0)     chips.push(`<span class="err-chip mistake">⬥ ${s.mistakes} ?</span>`);
   if (s.inaccuracies > 0) chips.push(`<span class="err-chip inaccuracy">⬥ ${s.inaccuracies} ?!</span>`);
   document.getElementById('error-chips').innerHTML = chips.join('') || '<span style="color:var(--good);font-size:12px">✓ Bonne partie !</span>';
-  document.getElementById('coaching-text').textContent = s.coaching || 'Aucun coaching disponible pour cette partie.';
+  const coachEl = document.getElementById('coaching-text');
+  coachEl.textContent = s.coaching || '';
+  if (!s.coaching) refreshCoaching();
 }
 
 // ── Clavier ───────────────────────────────────────────────────────
@@ -489,6 +491,23 @@ document.addEventListener('keydown', e => {
 function toggleFlip() {
   flipped = !flipped;
   goToMove(currentHalfMove);
+}
+
+// ── Coaching ─────────────────────────────────────────────────────
+async function refreshCoaching() {
+  const btn = document.getElementById('coaching-refresh');
+  const txt = document.getElementById('coaching-text');
+  if (btn) btn.style.opacity = '0.4';
+  txt.textContent = 'Génération en cours…';
+  try {
+    const r = await fetch(`/api/coaching/${uuid}`, { method: 'POST' });
+    const d = await r.json();
+    txt.textContent = d.coaching || 'Coaching indisponible.';
+    if (gameData) gameData.summary.coaching = d.coaching || '';
+  } catch(e) {
+    txt.textContent = 'Erreur lors de la génération.';
+  }
+  if (btn) btn.style.opacity = '';
 }
 
 // ── Init ──────────────────────────────────────────────────────────
@@ -555,7 +574,10 @@ async function init() {
       </div>
       <div class="moves-container"><div id="move-list"></div></div>
       <div class="coaching-section">
-        <div class="coach-title">🤖 Coaching IA</div>
+        <div class="coach-title" style="justify-content:space-between">
+          <span>🤖 Coaching IA</span>
+          <button id="coaching-refresh" onclick="refreshCoaching()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:0" title="Régénérer">↺</button>
+        </div>
         <p id="coaching-text"></p>
       </div>
     </div>

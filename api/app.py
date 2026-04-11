@@ -212,7 +212,7 @@ def generate_coaching(report):
     try:
         import google.generativeai as genai
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
 
         meta    = report["meta"]
         summary = report["summary"]
@@ -308,6 +308,24 @@ def start_analyze():
     t.start()
 
     return jsonify({"status": "started"})
+
+
+@app.route("/api/coaching/<uuid>", methods=["POST"])
+def refresh_coaching(uuid):
+    """Régénère le coaching IA pour une partie déjà analysée."""
+    path = DATA_DIR / f"{uuid}.json"
+    if not path.exists():
+        return jsonify({"error": "partie non analysée"}), 404
+    try:
+        with open(path, encoding="utf-8") as f:
+            report = json.load(f)
+        coaching = generate_coaching(report)
+        report["summary"]["coaching"] = coaching
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+        return jsonify({"coaching": coaching})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/status/<uuid>")
