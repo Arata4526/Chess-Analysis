@@ -334,6 +334,21 @@ def get_archives():
         return jsonify({"error": str(e)}), 502
 
 
+def cleanup_old_data(keep_days: int = 20) -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
+    removed = 0
+    for f in DATA_DIR.glob("*.json"):
+        if f.name == "latest.json":
+            continue
+        mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc)
+        if mtime < cutoff:
+            f.unlink()
+            removed += 1
+    if removed:
+        print(f"Cleanup: {removed} fichier(s) supprimé(s) (> {keep_days}j)")
+
+
 if __name__ == "__main__":
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    cleanup_old_data()
     app.run(host="0.0.0.0", port=5000, threaded=True)

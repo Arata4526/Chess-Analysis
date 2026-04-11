@@ -587,8 +587,8 @@ def send_email(stats: dict, coaching: str, reports: list) -> None:
 # ─────────────────────────────────────────────
 # Nettoyage ancien JSON (> 12 semaines)
 # ─────────────────────────────────────────────
-def cleanup_old_data(keep_weeks: int = 12) -> None:
-    cutoff = datetime.now(timezone.utc) - timedelta(weeks=keep_weeks)
+def cleanup_old_data(keep_days: int = 20) -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
     for f in DATA_DIR.glob("*.json"):
         if f.name == "latest.json":
             continue
