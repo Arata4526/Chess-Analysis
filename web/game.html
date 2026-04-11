@@ -30,8 +30,10 @@
     }
     .sq.light { background: #eeeed2; }
     .sq.dark  { background: #769656; }
+    /* last-move fallback (n/a ou classification inconnue) */
     .sq.last-move.light { background: #cdd52e; }
     .sq.last-move.dark  { background: #aaa23a; }
+    /* last-move coloré par classification (inline style prioritaire) */
     .piece {
       font-size: clamp(18px, 5.5cqw, 52px);
       line-height: 1;
@@ -83,6 +85,14 @@ const SYM_CLASS = {
   good:'sym-good', excellent:'sym-excellent', best:'sym-best'
 };
 const FILES = ['a','b','c','d','e','f','g','h'];
+const CLASSIF_RGBA = {
+  blunder:    [244, 67,  54],
+  mistake:    [255, 152, 0],
+  inaccuracy: [255, 235, 59],
+  good:       [129, 182, 76],
+  excellent:  [124, 185, 244],
+  best:       [156, 91,  255],
+};
 
 // ── État ──────────────────────────────────────────────────────────
 const uuid = new URLSearchParams(location.search).get('id');
@@ -112,12 +122,13 @@ function parseFen(fen) {
 }
 
 // ── Rendu échiquier ───────────────────────────────────────────────
-function renderBoard(fen, lastMove = null) {
+function renderBoard(fen, lastMove = null, classification = null) {
   const wrap = document.getElementById('chess-board-wrap');
   const pos = parseFen(fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
 
   const ranks = flipped ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
   const files = flipped ? [...FILES].reverse() : FILES;
+  const rgb   = CLASSIF_RGBA[classification] || null;
 
   let html = '<div class="chess-board">';
 
@@ -127,13 +138,22 @@ function renderBoard(fen, lastMove = null) {
       const file = files[fi];
       const sq = file + rank;
       const isLight = (FILES.indexOf(file) + rank) % 2 === 0;
-      const isLast = lastMove && (sq === lastMove[0] || sq === lastMove[1]);
+      const isDst  = lastMove && sq === lastMove[1]; // case destination
+      const isSrc  = lastMove && sq === lastMove[0]; // case source
+      const isLast = isDst || isSrc;
       const rankIdx = 8 - rank;
       const fileIdx = FILES.indexOf(file);
       const piece = pos[rankIdx] ? pos[rankIdx][fileIdx] : null;
       const isWhitePiece = piece && piece === piece.toUpperCase();
 
-      html += `<div class="sq ${isLight?'light':'dark'}${isLast?' last-move':''}">`;
+      // Couleur de fond : classification sur dst (opaque), source (semi-transparent), fallback jaune
+      let bgStyle = '';
+      if (isLast && rgb) {
+        const alpha = isDst ? 0.82 : 0.50;
+        bgStyle = ` style="background:rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})"`;
+      }
+
+      html += `<div class="sq ${isLight?'light':'dark'}${isLast&&!rgb?' last-move':''}"${bgStyle}>`;
       if (fi === 0) html += `<span class="coord-lbl coord-rank-lbl">${rank}</span>`;
       if (piece) html += `<span class="piece ${isWhitePiece?'w':'b'}">${PIECE_UNICODE[piece]||''}</span>`;
       if (ri === 7) html += `<span class="coord-lbl coord-file-lbl">${file}</span>`;
@@ -231,7 +251,8 @@ function goToMove(idx) {
     }
   }
 
-  renderBoard(fen, lastMove);
+  const classification = currentHalfMove > 0 ? moves[currentHalfMove - 1].classification : null;
+  renderBoard(fen, lastMove, classification);
 
   // Flèche meilleur coup
   if (currentHalfMove > 0) {
