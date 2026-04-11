@@ -305,9 +305,9 @@ a:hover { color: var(--accent-hover); }
 #chess-board-wrap {
   width: min(calc(100vh - 52px - 220px), 520px);
   height: min(calc(100vh - 52px - 220px), 520px);
+  flex-shrink: 0;
   border-radius: 2px;
   overflow: hidden;
-  flex-shrink: 0;
 }
 
 /* Controls */
