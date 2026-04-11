@@ -35,7 +35,7 @@
     .sq.last-move.dark  { background: #aaa23a; }
     /* last-move coloré par classification (inline style prioritaire) */
     .piece {
-      font-size: clamp(18px, 5.5cqw, 52px);
+      font-size: clamp(24px, 9cqw, 68px);
       line-height: 1;
       user-select: none;
       pointer-events: none;
@@ -122,7 +122,7 @@ function parseFen(fen) {
 }
 
 // ── Rendu échiquier ───────────────────────────────────────────────
-function renderBoard(fen, lastMove = null, classification = null) {
+function renderBoard(fen, lastMove = null, classification = null, hideSq = null) {
   const wrap = document.getElementById('chess-board-wrap');
   const pos = parseFen(fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
 
@@ -138,24 +138,24 @@ function renderBoard(fen, lastMove = null, classification = null) {
       const file = files[fi];
       const sq = file + rank;
       const isLight = (FILES.indexOf(file) + rank) % 2 === 0;
-      const isDst  = lastMove && sq === lastMove[1]; // case destination
-      const isSrc  = lastMove && sq === lastMove[0]; // case source
+      const isDst  = lastMove && sq === lastMove[1];
+      const isSrc  = lastMove && sq === lastMove[0];
       const isLast = isDst || isSrc;
       const rankIdx = 8 - rank;
       const fileIdx = FILES.indexOf(file);
       const piece = pos[rankIdx] ? pos[rankIdx][fileIdx] : null;
       const isWhitePiece = piece && piece === piece.toUpperCase();
+      const isHidden = hideSq === sq;
 
-      // Couleur de fond : classification sur dst (opaque), source (semi-transparent), fallback jaune
       let bgStyle = '';
       if (isLast && rgb) {
         const alpha = isDst ? 0.82 : 0.50;
         bgStyle = ` style="background:rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})"`;
       }
 
-      html += `<div class="sq ${isLight?'light':'dark'}${isLast&&!rgb?' last-move':''}"${bgStyle}>`;
+      html += `<div class="sq ${isLight?'light':'dark'}${isLast&&!rgb?' last-move':''}" data-sq="${sq}"${bgStyle}>`;
       if (fi === 0) html += `<span class="coord-lbl coord-rank-lbl">${rank}</span>`;
-      if (piece) html += `<span class="piece ${isWhitePiece?'w':'b'}">${PIECE_UNICODE[piece]||''}</span>`;
+      if (piece) html += `<span class="piece ${isWhitePiece?'w':'b'}"${isHidden?' style="opacity:0"':''}>${PIECE_UNICODE[piece]||''}</span>`;
       if (ri === 7) html += `<span class="coord-lbl coord-file-lbl">${file}</span>`;
       html += '</div>';
     }
@@ -185,7 +185,7 @@ function renderArrow(bestUci, playedUci) {
   const to   = squareToCenter(bestUci.slice(2, 4));
   const dx = to.x - from.x, dy = to.y - from.y;
   const len = Math.sqrt(dx * dx + dy * dy);
-  const headLen = 0.5;
+  const headLen = 0.35;
   const ex = from.x + dx * (len - headLen) / len;
   const ey = from.y + dy * (len - headLen) / len;
 
@@ -215,12 +215,78 @@ function renderArrow(bestUci, playedUci) {
   line.setAttribute('x1', from.x); line.setAttribute('y1', from.y);
   line.setAttribute('x2', ex);     line.setAttribute('y2', ey);
   line.setAttribute('stroke', 'rgba(80,200,100,0.9)');
-  line.setAttribute('stroke-width', '0.28');
+  line.setAttribute('stroke-width', '0.18');
   line.setAttribute('stroke-linecap', 'round');
   line.setAttribute('marker-end', 'url(#bm-head)');
   svg.appendChild(line);
 
   board.appendChild(svg);
+}
+
+// ── Animation pièces ──────────────────────────────────────────────
+let activeAnim = null;
+
+function getPieceAt(fen, sq) {
+  const pos  = parseFen(fen);
+  const fi   = sq.charCodeAt(0) - 97;
+  const rank = parseInt(sq[1]);
+  return (pos[8 - rank] || [])[fi] || null;
+}
+
+function revealPieceAt(sq) {
+  const el = document.querySelector(`.sq[data-sq="${sq}"] .piece`);
+  if (el) el.style.opacity = '';
+}
+
+function cancelAnim() {
+  if (!activeAnim) return;
+  clearTimeout(activeAnim.timeout);
+  if (activeAnim.el.parentNode) activeAnim.el.remove();
+  activeAnim = null;
+}
+
+function animatePiece(piece, fromSq, toSq, onDone) {
+  const board = document.querySelector('.chess-board');
+  if (!board || !piece) { onDone(); return; }
+
+  const size = board.offsetWidth / 8;
+  function sqPos(sq) {
+    const fi   = sq.charCodeAt(0) - 97;
+    const rank = parseInt(sq[1]);
+    return {
+      x: (flipped ? 7 - fi   : fi)       * size,
+      y: (flipped ? rank - 1 : 8 - rank) * size,
+    };
+  }
+
+  const from = sqPos(fromSq);
+  const to   = sqPos(toSq);
+
+  const el = document.createElement('span');
+  el.className = `piece ${piece === piece.toUpperCase() ? 'w' : 'b'}`;
+  el.textContent = PIECE_UNICODE[piece] || '';
+  Object.assign(el.style, {
+    position:       'absolute',
+    left:           from.x + 'px',
+    top:            from.y + 'px',
+    width:          size + 'px',
+    height:         size + 'px',
+    display:        'flex',
+    alignItems:     'center',
+    justifyContent: 'center',
+    zIndex:         '20',
+    pointerEvents:  'none',
+    transition:     'left 0.16s cubic-bezier(0.25,0.1,0.25,1), top 0.16s cubic-bezier(0.25,0.1,0.25,1)',
+  });
+  board.appendChild(el);
+
+  el.getBoundingClientRect(); // force reflow
+  el.style.left = to.x + 'px';
+  el.style.top  = to.y + 'px';
+
+  const done = () => { el.remove(); activeAnim = null; onDone(); };
+  el.addEventListener('transitionend', done, { once: true });
+  activeAnim = { el, timeout: setTimeout(done, 350) };
 }
 
 // ── Eval helpers ──────────────────────────────────────────────────
@@ -235,24 +301,51 @@ function formatEval(cp) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
 function goToMove(idx) {
+  const prevHalfMove = currentHalfMove;
   const moves = gameData.moves;
   currentHalfMove = Math.max(0, Math.min(moves.length, idx));
+  const step = currentHalfMove - prevHalfMove;
 
   const fen = currentHalfMove === 0
-    ? 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+    ? START_FEN
     : (moves[currentHalfMove - 1].fen_after || null);
 
   let lastMove = null;
   if (currentHalfMove > 0) {
     const m = moves[currentHalfMove - 1];
     if (m.uci && m.uci.length >= 4) {
-      lastMove = [m.uci.slice(0,2), m.uci.slice(2,4)];
+      lastMove = [m.uci.slice(0, 2), m.uci.slice(2, 4)];
     }
   }
 
   const classification = currentHalfMove > 0 ? moves[currentHalfMove - 1].classification : null;
-  renderBoard(fen, lastMove, classification);
+
+  cancelAnim();
+
+  // Calcul animation (seulement pour pas-à-pas)
+  let animFrom = null, animTo = null, animPiece = null;
+  if (Math.abs(step) === 1) {
+    if (step === 1 && currentHalfMove > 0) {
+      // Avance : pièce de src vers dst
+      const m = moves[currentHalfMove - 1];
+      animFrom = m.uci.slice(0, 2);
+      animTo   = m.uci.slice(2, 4);
+      const prevFen = currentHalfMove > 1 ? moves[currentHalfMove - 2].fen_after : START_FEN;
+      animPiece = getPieceAt(prevFen, animFrom);
+    } else if (step === -1 && prevHalfMove > 0) {
+      // Recul : pièce de dst vers src
+      const m = moves[prevHalfMove - 1];
+      animFrom = m.uci.slice(2, 4);
+      animTo   = m.uci.slice(0, 2);
+      animPiece = getPieceAt(moves[prevHalfMove - 1].fen_after, animFrom);
+    }
+  }
+
+  renderBoard(fen, lastMove, classification, animPiece ? animTo : null);
+  if (animPiece) animatePiece(animPiece, animFrom, animTo, () => revealPieceAt(animTo));
 
   // Flèche meilleur coup
   if (currentHalfMove > 0) {
