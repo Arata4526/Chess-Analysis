@@ -130,7 +130,7 @@ def analyze_game(pgn_string, player_username, engine, time_class):
             "best_move_san":  best_san,
             "best_move_uci":  best_move_obj.uci() if best_move_obj else uci,
             "cp_loss":        cp_loss,
-            "classification": classify_move(cp_loss) if is_player_move else "n/a",
+            "classification": classify_move(cp_loss),
             "phase":          get_phase(idx),
             "is_player_move": is_player_move,
         })

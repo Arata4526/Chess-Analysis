@@ -19,6 +19,7 @@
       width: 100%;
       height: 100%;
       container-type: size;
+      position: relative;
     }
     .sq {
       position: relative;
@@ -144,6 +145,64 @@ function renderBoard(fen, lastMove = null) {
   wrap.innerHTML = html;
 }
 
+// ── Flèche meilleur coup ──────────────────────────────────────────
+function squareToCenter(sqName) {
+  const fi   = sqName.charCodeAt(0) - 97; // 0–7 (a–h)
+  const rank = parseInt(sqName[1]);        // 1–8
+  const x = flipped ? (7 - fi) : fi;
+  const y = flipped ? (rank - 1) : (8 - rank);
+  return { x: x + 0.5, y: y + 0.5 };     // centre dans espace 8×8
+}
+
+function renderArrow(bestUci, playedUci) {
+  const board = document.querySelector('.chess-board');
+  if (!board) return;
+  const old = board.querySelector('svg.best-arrow');
+  if (old) old.remove();
+  if (!bestUci || bestUci === playedUci) return;
+
+  const from = squareToCenter(bestUci.slice(0, 2));
+  const to   = squareToCenter(bestUci.slice(2, 4));
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  const headLen = 0.5;
+  const ex = from.x + dx * (len - headLen) / len;
+  const ey = from.y + dy * (len - headLen) / len;
+
+  const ns  = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 8 8');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('class', 'best-arrow');
+  svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10';
+
+  const defs   = document.createElementNS(ns, 'defs');
+  const marker = document.createElementNS(ns, 'marker');
+  marker.setAttribute('id', 'bm-head');
+  marker.setAttribute('markerWidth', '3');
+  marker.setAttribute('markerHeight', '3');
+  marker.setAttribute('refX', '1.5');
+  marker.setAttribute('refY', '1.5');
+  marker.setAttribute('orient', 'auto');
+  const poly = document.createElementNS(ns, 'polygon');
+  poly.setAttribute('points', '0,0 3,1.5 0,3');
+  poly.setAttribute('fill', 'rgba(80,200,100,0.9)');
+  marker.appendChild(poly);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  const line = document.createElementNS(ns, 'line');
+  line.setAttribute('x1', from.x); line.setAttribute('y1', from.y);
+  line.setAttribute('x2', ex);     line.setAttribute('y2', ey);
+  line.setAttribute('stroke', 'rgba(80,200,100,0.9)');
+  line.setAttribute('stroke-width', '0.28');
+  line.setAttribute('stroke-linecap', 'round');
+  line.setAttribute('marker-end', 'url(#bm-head)');
+  svg.appendChild(line);
+
+  board.appendChild(svg);
+}
+
 // ── Eval helpers ──────────────────────────────────────────────────
 function cpToPercent(cp) {
   return 50 + (Math.max(-800, Math.min(800, cp || 0)) / 800) * 50;
@@ -173,6 +232,14 @@ function goToMove(idx) {
   }
 
   renderBoard(fen, lastMove);
+
+  // Flèche meilleur coup
+  if (currentHalfMove > 0) {
+    const m = moves[currentHalfMove - 1];
+    renderArrow(m.best_move_uci, m.uci);
+  } else {
+    renderArrow(null, null);
+  }
 
   // Eval bar
   const cp = currentHalfMove === 0 ? 0 : (moves[currentHalfMove - 1].eval_after ?? 0);
@@ -253,10 +320,10 @@ function renderMoveList() {
   let html = '';
   for (let i = 0; i < moves.length; i += 2) {
     const w = moves[i], b = moves[i+1];
-    const wSym = w.is_player_move ? (SYMBOLS[w.classification] || '') : '';
-    const bSym = b && b.is_player_move ? (SYMBOLS[b.classification] || '') : '';
-    const wCls = w.is_player_move ? (SYM_CLASS[w.classification] || '') : '';
-    const bCls = b && b.is_player_move ? (SYM_CLASS[b.classification] || '') : '';
+    const wSym = SYMBOLS[w.classification] || '';
+    const bSym = b ? (SYMBOLS[b.classification] || '') : '';
+    const wCls = SYM_CLASS[w.classification] || '';
+    const bCls = b ? (SYM_CLASS[b.classification] || '') : '';
     html += `<div class="move-row">
       <span class="move-num">${w.move_number}.</span>
       <span class="move-cell" id="mc-${i+1}" onclick="goToMove(${i+1})">
@@ -307,14 +374,7 @@ document.addEventListener('keydown', e => {
 
 function toggleFlip() {
   flipped = !flipped;
-  const moves = gameData?.moves;
-  const fen = currentHalfMove === 0 ? null : moves[currentHalfMove - 1].fen_after;
-  let lm = null;
-  if (currentHalfMove > 0) {
-    const m = moves[currentHalfMove - 1];
-    if (m.uci?.length >= 4) lm = [m.uci.slice(0,2), m.uci.slice(2,4)];
-  }
-  renderBoard(fen, lm);
+  goToMove(currentHalfMove);
 }
 
 // ── Init ──────────────────────────────────────────────────────────
