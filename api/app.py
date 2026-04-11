@@ -25,7 +25,23 @@ from flask_cors import CORS
 load_dotenv("/data/.env")
 
 app = Flask(__name__)
-CORS(app)
+# CORS limité à l'origine du site uniquement
+CORS(app, origins=[os.environ.get("SITE_URL", "*")])
+
+API_KEY = os.environ.get("API_KEY", "")
+
+def require_api_key(f):
+    """Vérifie la clé API sur les endpoints sensibles."""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not API_KEY:
+            return f(*args, **kwargs)  # pas de clé configurée = accès libre (dev)
+        key = request.headers.get("X-API-Key") or request.args.get("api_key")
+        if key != API_KEY:
+            return jsonify({"error": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 CHESS_USERNAME = "Arata4526"
 DATA_DIR       = Path(os.environ.get("DATA_DIR", "/data"))
@@ -285,6 +301,7 @@ def get_games(year, month):
 
 
 @app.route("/api/analyze", methods=["POST"])
+@require_api_key
 def start_analyze():
     """Lance l'analyse d'une partie en background."""
     data = request.get_json()
