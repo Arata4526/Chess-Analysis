@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Analyse partie – Chess</title>
   <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.1.5/assets/chessground.base.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.2.1/assets/chessground.base.css">
   <style>
     /* ── Wrapper Chessground ── */
     #chess-board-wrap {
@@ -84,7 +84,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 
 <script type="module">
-import { Chessground } from 'https://cdn.jsdelivr.net/npm/chessground@9.1.5/+esm';
+import { Chessground } from 'https://cdn.jsdelivr.net/npm/chessground@9.2.1/+esm';
 
 // ── Constantes ────────────────────────────────────────────────────
 const SYMBOLS = {
@@ -201,8 +201,8 @@ function goToMove(idx) {
     fen,
     lastMove,
     orientation: flipped ? 'black' : 'white',
-    drawable: { autoShapes: shapes },
   });
+  cg.setAutoShapes(shapes);
 
   // Eval bar
   const cp = currentHalfMove === 0 ? 0 : (moves[currentHalfMove - 1].eval_after ?? 0);
@@ -446,6 +446,7 @@ async function init() {
 }
 
 // Expose pour les onclick inline (le script est un module → scope isolé)
+window.__cg = () => cg;
 window.goToMove       = goToMove;
 window.toggleFlip     = toggleFlip;
 window.refreshCoaching = refreshCoaching;
