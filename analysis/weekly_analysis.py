@@ -202,7 +202,7 @@ def analyze_game(pgn_string: str, player_username: str,
             "best_move_uci":  best_move_obj.uci() if best_move_obj else uci,
             "cp_loss":        cp_loss,
             "winrate_delta":  round(wr_delta, 2),
-            "classification": classification if is_player_move else "n/a",
+            "classification": classification,
             "phase":          get_phase(idx),
             "is_player_move": is_player_move,
         })
