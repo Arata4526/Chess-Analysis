@@ -63,17 +63,26 @@ def winrate(cp):
     cp = max(-1000, min(1000, cp))
     return 50 + 50 * (2 / (1 + math.exp(-0.004 * cp)) - 1)
 
-def classify_move(eval_before_white, eval_after_white, mover_was_white):
+def classify_move(eval_before_white, eval_after_white, mover_was_white,
+                  played_uci, best_uci):
     """Classifie depuis la perspective du joueur qui vient de jouer.
-    Retourne (classification, winrate_delta) — delta positif = winrate perdu."""
+    Convention proche de chess.com :
+      - "best"       : coup joué = top choice Stockfish (égalité UCI stricte)
+      - "excellent"  : delta < 2% mais pas le top choice
+      - "good"       : delta < 5%
+      - "inaccuracy" : 5-10%
+      - "mistake"    : 10-20%
+      - "blunder"    : ≥ 20%
+    Retourne (classification, winrate_delta)."""
     sign = 1 if mover_was_white else -1
     delta = winrate(sign * eval_before_white) - winrate(sign * eval_after_white)
-    if delta < 2:    return "best",       delta
-    if delta < 5:    return "excellent",  delta
-    if delta < 10:   return "good",       delta
-    if delta < 20:   return "inaccuracy", delta
-    if delta < 30:   return "mistake",    delta
-    return "blunder", delta
+    if delta >= 20:  return "blunder",    delta
+    if delta >= 10:  return "mistake",    delta
+    if delta >= 5:   return "inaccuracy", delta
+    if played_uci and best_uci and played_uci == best_uci:
+        return "best", delta
+    if delta < 2:    return "excellent",  delta
+    return "good", delta
 
 def move_accuracy(winrate_delta):
     """Accuracy par coup 0-100 (formule Lichess CAPS)."""
@@ -122,7 +131,10 @@ def analyze_game(pgn_string, player_username, engine, time_class):
         else:
             cp_loss = max(0, eval_after - eval_before)
 
-        classification, wr_delta = classify_move(eval_before, eval_after, mover_was_white)
+        best_uci_str = best_move_obj.uci() if best_move_obj else None
+        classification, wr_delta = classify_move(
+            eval_before, eval_after, mover_was_white, uci, best_uci_str
+        )
         is_player_move = (board.turn != player_color)
 
         best_san = san
@@ -353,6 +365,48 @@ def get_status(uuid):
         return jsonify({"status": "done"})
     status = analysis_jobs.get(uuid, "not_started")
     return jsonify({"status": status})
+
+
+@app.route("/api/reclassify", methods=["POST"])
+def reclassify_all():
+    """Recalcule les classifications de tous les JSON sans rerunner Stockfish.
+    Utilise eval_before / eval_after / uci / best_move_uci déjà stockés."""
+    updated, errors = 0, 0
+    for path in DATA_DIR.glob("*.json"):
+        if path.name == "latest.json":
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                report = json.load(f)
+            moves = report.get("moves", [])
+            for m in moves:
+                eb = m.get("eval_before", 0) or 0
+                ea = m.get("eval_after", 0) or 0
+                mover_was_white = (m.get("color") == "white")
+                cls, wr_d = classify_move(eb, ea, mover_was_white,
+                                          m.get("uci"), m.get("best_move_uci"))
+                m["classification"] = cls
+                m["winrate_delta"]  = round(wr_d, 2)
+            # Recalculer le résumé côté joueur
+            player_moves = [m for m in moves if m.get("is_player_move")]
+            s = report.setdefault("summary", {})
+            s["blunders"]     = sum(1 for m in player_moves if m["classification"] == "blunder")
+            s["mistakes"]     = sum(1 for m in player_moves if m["classification"] == "mistake")
+            s["inaccuracies"] = sum(1 for m in player_moves if m["classification"] == "inaccuracy")
+            accs = [move_accuracy(m.get("winrate_delta", 0)) for m in player_moves]
+            s["accuracy"]     = round(sum(accs) / len(accs), 1) if accs else 0
+            worst = max(player_moves, key=lambda m: m.get("cp_loss", 0), default=None)
+            s["worst_move"] = {
+                "half_move": worst["half_move"], "san": worst["san"],
+                "cp_loss": worst["cp_loss"], "best_san": worst["best_move_san"],
+            } if worst and worst.get("cp_loss", 0) > 50 else None
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(report, f, ensure_ascii=False, indent=2)
+            updated += 1
+        except Exception as e:
+            print(f"reclassify {path.name}: {e}")
+            errors += 1
+    return jsonify({"updated": updated, "errors": errors})
 
 
 @app.route("/api/archives")

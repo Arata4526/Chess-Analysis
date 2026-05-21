@@ -60,17 +60,19 @@ def winrate(cp: int) -> float:
     return 50 + 50 * (2 / (1 + math.exp(-0.004 * cp)) - 1)
 
 
-def classify_move(eval_before_white: int, eval_after_white: int, mover_was_white: bool):
-    """Classifie depuis la perspective du joueur qui vient de jouer.
-    Retourne (classification, winrate_delta)."""
+def classify_move(eval_before_white: int, eval_after_white: int, mover_was_white: bool,
+                  played_uci: str, best_uci):
+    """Classifie depuis la perspective du joueur (convention chess.com).
+    "best" exige que le coup joué soit le top choice Stockfish."""
     sign = 1 if mover_was_white else -1
     delta = winrate(sign * eval_before_white) - winrate(sign * eval_after_white)
-    if delta < 2:    return "best",       delta
-    if delta < 5:    return "excellent",  delta
-    if delta < 10:   return "good",       delta
-    if delta < 20:   return "inaccuracy", delta
-    if delta < 30:   return "mistake",    delta
-    return "blunder", delta
+    if delta >= 20:  return "blunder",    delta
+    if delta >= 10:  return "mistake",    delta
+    if delta >= 5:   return "inaccuracy", delta
+    if played_uci and best_uci and played_uci == best_uci:
+        return "best", delta
+    if delta < 2:    return "excellent",  delta
+    return "good", delta
 
 
 def move_accuracy(winrate_delta: float) -> float:
@@ -175,7 +177,10 @@ def analyze_game(pgn_string: str, player_username: str,
         else:
             cp_loss = max(0, eval_after - eval_before)
 
-        classification, wr_delta = classify_move(eval_before, eval_after, mover_was_white)
+        best_uci_str = best_move_obj.uci() if best_move_obj else None
+        classification, wr_delta = classify_move(
+            eval_before, eval_after, mover_was_white, uci, best_uci_str
+        )
         is_player_move = (board.turn != player_color)
 
         # Meilleur coup en SAN
