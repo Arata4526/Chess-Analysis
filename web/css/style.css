@@ -10,15 +10,15 @@
   --accent:       #81b64c;
   --accent-hover: #96d15a;
 
-  --blunder:     #f44336;
-  --mistake:     #ff9800;
-  --inaccuracy:  #ffeb3b;
-  --good:        #81b64c;
-  --excellent:   #7cb9f4;
-  --best:        #9c5bff;
+  --blunder:     #fa412d;
+  --mistake:     #ffa459;
+  --inaccuracy:  #f7c245;
+  --good:        #95bb4a;
+  --excellent:   #76a3d6;
+  --best:        #1cada6;
 
-  --win:  #81b64c;
-  --loss: #f44336;
+  --win:  #95bb4a;
+  --loss: #fa412d;
   --draw: #9e9e9e;
 }
 
@@ -175,7 +175,7 @@ a:hover { color: var(--accent-hover); }
   flex-shrink: 0;
 }
 .result-badge.win  { background: rgba(129,182,76,0.2);  color: var(--win); }
-.result-badge.loss { background: rgba(244,67,54,0.2);   color: var(--loss); }
+.result-badge.loss { background: rgba(250,65,45,0.2);   color: var(--loss); }
 .result-badge.draw { background: rgba(158,158,158,0.2); color: var(--draw); }
 
 .game-info .opponent { font-weight: 600; font-size: 14px; }
@@ -367,9 +367,9 @@ a:hover { color: var(--accent-hover); }
   padding: 2px 7px;
   border-radius: 10px;
 }
-.err-chip.blunder    { background: rgba(244,67,54,0.18);   color: var(--blunder); }
-.err-chip.mistake    { background: rgba(255,152,0,0.18);   color: var(--mistake); }
-.err-chip.inaccuracy { background: rgba(255,235,59,0.12);  color: var(--inaccuracy); }
+.err-chip.blunder    { background: rgba(250,65,45,0.18);    color: var(--blunder); }
+.err-chip.mistake    { background: rgba(255,164,89,0.18);   color: var(--mistake); }
+.err-chip.inaccuracy { background: rgba(247,194,69,0.15);   color: var(--inaccuracy); }
 
 /* Move list */
 .moves-container {

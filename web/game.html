@@ -5,54 +5,67 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Analyse partie – Chess</title>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.1.5/assets/chessground.base.css">
   <style>
-    /* ── Échiquier custom ── */
+    /* ── Wrapper Chessground ── */
     #chess-board-wrap {
       width: min(calc(100vh - 52px - 220px), 520px);
       height: min(calc(100vh - 52px - 220px), 520px);
       flex-shrink: 0;
-    }
-    .chess-board {
-      display: grid;
-      grid-template-columns: repeat(8, 1fr);
-      grid-template-rows: repeat(8, 1fr);
-      width: 100%;
-      height: 100%;
-      container-type: size;
       position: relative;
     }
-    .sq {
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
+
+    /* Damier vert chess.com via pattern SVG */
+    cg-board {
+      background-color: #eeeed2;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'><rect width='1' height='1' fill='%23769656' x='1' y='0'/><rect width='1' height='1' fill='%23769656' x='0' y='1'/></svg>");
+      background-size: 25% 25%;
     }
-    .sq.light { background: #eeeed2; }
-    .sq.dark  { background: #769656; }
-    /* last-move fallback (n/a ou classification inconnue) */
-    .sq.last-move.light { background: #cdd52e; }
-    .sq.last-move.dark  { background: #aaa23a; }
-    /* last-move coloré par classification (inline style prioritaire) */
-    .piece {
-      font-size: clamp(24px, 9cqw, 68px);
-      line-height: 1;
-      user-select: none;
-      pointer-events: none;
-    }
-    .piece.w { color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #444; }
-    .piece.b { color: #1a1a1a; text-shadow: 0 0 1px rgba(255,255,255,0.5); }
-    .coord-lbl {
+    cg-board square.last-move { background-color: rgba(155,199,0,0.41); }
+
+    /* Pièces cburnett (override des background-image par défaut de chessground) */
+    cg-board piece.pawn.white   { background-image: url('pieces/cburnett/wP.svg'); }
+    cg-board piece.knight.white { background-image: url('pieces/cburnett/wN.svg'); }
+    cg-board piece.bishop.white { background-image: url('pieces/cburnett/wB.svg'); }
+    cg-board piece.rook.white   { background-image: url('pieces/cburnett/wR.svg'); }
+    cg-board piece.queen.white  { background-image: url('pieces/cburnett/wQ.svg'); }
+    cg-board piece.king.white   { background-image: url('pieces/cburnett/wK.svg'); }
+    cg-board piece.pawn.black   { background-image: url('pieces/cburnett/bP.svg'); }
+    cg-board piece.knight.black { background-image: url('pieces/cburnett/bN.svg'); }
+    cg-board piece.bishop.black { background-image: url('pieces/cburnett/bB.svg'); }
+    cg-board piece.rook.black   { background-image: url('pieces/cburnett/bR.svg'); }
+    cg-board piece.queen.black  { background-image: url('pieces/cburnett/bQ.svg'); }
+    cg-board piece.king.black   { background-image: url('pieces/cburnett/bK.svg'); }
+
+    /* Coordonnées : à l'intérieur du board, comme avant */
+    .cg-wrap coords {
       position: absolute;
-      font-size: 9px;
-      font-weight: 700;
-      line-height: 1;
       pointer-events: none;
+      font-weight: 700;
+      font-size: 10px;
+      display: flex;
     }
-    .sq.light .coord-lbl { color: #769656; }
-    .sq.dark  .coord-lbl { color: #eeeed2; }
-    .coord-rank-lbl { top: 2px; left: 3px; }
-    .coord-file-lbl { bottom: 2px; right: 3px; }
+    .cg-wrap coords.ranks {
+      left: 2px; top: 0; bottom: 0;
+      flex-direction: column-reverse;
+      width: auto;
+    }
+    .cg-wrap coords.ranks.black { flex-direction: column; }
+    .cg-wrap coords.files {
+      left: 0; right: 0; bottom: 0;
+      flex-direction: row;
+      text-align: right;
+      padding-right: 4px;
+      height: auto;
+      text-transform: lowercase;
+    }
+    .cg-wrap coords.files.black { flex-direction: row-reverse; }
+    .cg-wrap coords coord { flex: 1 1 auto; line-height: 1; }
+    /* Couleur des coords alternée (light = vert, dark = beige) */
+    .cg-wrap coords.ranks coord:nth-child(odd)  { color: #eeeed2; }
+    .cg-wrap coords.ranks coord:nth-child(even) { color: #769656; }
+    .cg-wrap coords.files coord:nth-child(odd)  { color: #769656; }
+    .cg-wrap coords.files coord:nth-child(even) { color: #eeeed2; }
   </style>
 </head>
 <body>
@@ -70,12 +83,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 
-<script>
+<script type="module">
+import { Chessground } from 'https://cdn.jsdelivr.net/npm/chessground@9.1.5/+esm';
+
 // ── Constantes ────────────────────────────────────────────────────
-const PIECE_UNICODE = {
-  K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',
-  k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'
-};
 const SYMBOLS = {
   blunder:'??', mistake:'?', inaccuracy:'?!',
   good:'!', excellent:'!!', best:'', 'n/a':''
@@ -84,14 +95,14 @@ const SYM_CLASS = {
   blunder:'sym-blunder', mistake:'sym-mistake', inaccuracy:'sym-inaccuracy',
   good:'sym-good', excellent:'sym-excellent', best:'sym-best'
 };
-const FILES = ['a','b','c','d','e','f','g','h'];
-const CLASSIF_RGBA = {
-  blunder:    [244, 67,  54],
-  mistake:    [255, 152, 0],
-  inaccuracy: [255, 235, 59],
-  good:       [129, 182, 76],
-  excellent:  [124, 185, 244],
-  best:       [156, 91,  255],
+// Couleurs CSS pour les surbrillances de cases par classification
+const CLASSIF_HEX = {
+  blunder:    '#fa412d',
+  mistake:    '#ffa459',
+  inaccuracy: '#f7c245',
+  good:       '#95bb4a',
+  excellent:  '#76a3d6',
+  best:       '#1cada6',
 };
 
 // ── État ──────────────────────────────────────────────────────────
@@ -100,6 +111,7 @@ let gameData = null;
 let evalChart = null;
 let currentHalfMove = 0;
 let flipped = false;
+let cg = null;  // instance Chessground
 
 // ── Fetch JSON ────────────────────────────────────────────────────
 async function loadGame() {
@@ -108,185 +120,31 @@ async function loadGame() {
   return res.json();
 }
 
-// ── FEN → tableau 8x8 ────────────────────────────────────────────
-function parseFen(fen) {
-  const rows = fen.split(' ')[0].split('/');
-  return rows.map(row => {
-    const rank = [];
-    for (const c of row) {
-      if (isNaN(c)) rank.push(c);
-      else for (let i = 0; i < +c; i++) rank.push(null);
-    }
-    return rank;
-  });
-}
-
-// ── Rendu échiquier ───────────────────────────────────────────────
-function renderBoard(fen, lastMove = null, classification = null, hideSq = null) {
+// ── Init Chessground ─────────────────────────────────────────────
+function initBoard() {
   const wrap = document.getElementById('chess-board-wrap');
-  const pos = parseFen(fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
-
-  const ranks = flipped ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
-  const files = flipped ? [...FILES].reverse() : FILES;
-  const rgb   = CLASSIF_RGBA[classification] || null;
-
-  let html = '<div class="chess-board">';
-
-  for (let ri = 0; ri < 8; ri++) {
-    const rank = ranks[ri];
-    for (let fi = 0; fi < 8; fi++) {
-      const file = files[fi];
-      const sq = file + rank;
-      const isLight = (FILES.indexOf(file) + rank) % 2 === 0;
-      const isDst  = lastMove && sq === lastMove[1];
-      const isSrc  = lastMove && sq === lastMove[0];
-      const isLast = isDst || isSrc;
-      const rankIdx = 8 - rank;
-      const fileIdx = FILES.indexOf(file);
-      const piece = pos[rankIdx] ? pos[rankIdx][fileIdx] : null;
-      const isWhitePiece = piece && piece === piece.toUpperCase();
-      const isHidden = hideSq === sq;
-
-      let bgStyle = '';
-      if (isLast && rgb) {
-        const alpha = isDst ? 0.82 : 0.50;
-        bgStyle = ` style="background:rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})"`;
-      }
-
-      html += `<div class="sq ${isLight?'light':'dark'}${isLast&&!rgb?' last-move':''}" data-sq="${sq}"${bgStyle}>`;
-      if (fi === 0) html += `<span class="coord-lbl coord-rank-lbl">${rank}</span>`;
-      if (piece) html += `<span class="piece ${isWhitePiece?'w':'b'}"${isHidden?' style="opacity:0"':''}>${PIECE_UNICODE[piece]||''}</span>`;
-      if (ri === 7) html += `<span class="coord-lbl coord-file-lbl">${file}</span>`;
-      html += '</div>';
-    }
+  wrap.innerHTML = '';
+  // Construire les brushes pour highlights de cases + flèche best move
+  const brushes = {
+    bestmove: { key: 'bestmove', color: '#1cada6', opacity: 0.85, lineWidth: 12 },
+  };
+  for (const [k, color] of Object.entries(CLASSIF_HEX)) {
+    brushes['cls-' + k] = { key: 'cls-' + k, color, opacity: 0.55, lineWidth: 10 };
   }
-
-  html += '</div>';
-  wrap.innerHTML = html;
-}
-
-// ── Flèche meilleur coup ──────────────────────────────────────────
-function squareToCenter(sqName) {
-  const fi   = sqName.charCodeAt(0) - 97; // 0–7 (a–h)
-  const rank = parseInt(sqName[1]);        // 1–8
-  const x = flipped ? (7 - fi) : fi;
-  const y = flipped ? (rank - 1) : (8 - rank);
-  return { x: x + 0.5, y: y + 0.5 };     // centre dans espace 8×8
-}
-
-function renderArrow(bestUci, playedUci) {
-  const board = document.querySelector('.chess-board');
-  if (!board) return;
-  const old = board.querySelector('svg.best-arrow');
-  if (old) old.remove();
-  if (!bestUci || bestUci === playedUci) return;
-
-  const from = squareToCenter(bestUci.slice(0, 2));
-  const to   = squareToCenter(bestUci.slice(2, 4));
-  const dx = to.x - from.x, dy = to.y - from.y;
-  const len = Math.sqrt(dx * dx + dy * dy);
-  const headLen = 0.35;
-  const ex = from.x + dx * (len - headLen) / len;
-  const ey = from.y + dy * (len - headLen) / len;
-
-  const ns  = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 8 8');
-  svg.setAttribute('preserveAspectRatio', 'none');
-  svg.setAttribute('class', 'best-arrow');
-  svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10';
-
-  const defs   = document.createElementNS(ns, 'defs');
-  const marker = document.createElementNS(ns, 'marker');
-  marker.setAttribute('id', 'bm-head');
-  marker.setAttribute('markerWidth', '3');
-  marker.setAttribute('markerHeight', '3');
-  marker.setAttribute('refX', '1.5');
-  marker.setAttribute('refY', '1.5');
-  marker.setAttribute('orient', 'auto');
-  const poly = document.createElementNS(ns, 'polygon');
-  poly.setAttribute('points', '0,0 3,1.5 0,3');
-  poly.setAttribute('fill', 'rgba(80,200,100,0.9)');
-  marker.appendChild(poly);
-  defs.appendChild(marker);
-  svg.appendChild(defs);
-
-  const line = document.createElementNS(ns, 'line');
-  line.setAttribute('x1', from.x); line.setAttribute('y1', from.y);
-  line.setAttribute('x2', ex);     line.setAttribute('y2', ey);
-  line.setAttribute('stroke', 'rgba(80,200,100,0.9)');
-  line.setAttribute('stroke-width', '0.18');
-  line.setAttribute('stroke-linecap', 'round');
-  line.setAttribute('marker-end', 'url(#bm-head)');
-  svg.appendChild(line);
-
-  board.appendChild(svg);
-}
-
-// ── Animation pièces ──────────────────────────────────────────────
-let activeAnim = null;
-
-function getPieceAt(fen, sq) {
-  const pos  = parseFen(fen);
-  const fi   = sq.charCodeAt(0) - 97;
-  const rank = parseInt(sq[1]);
-  return (pos[8 - rank] || [])[fi] || null;
-}
-
-function revealPieceAt(sq) {
-  const el = document.querySelector(`.sq[data-sq="${sq}"] .piece`);
-  if (el) el.style.opacity = '';
-}
-
-function cancelAnim() {
-  if (!activeAnim) return;
-  clearTimeout(activeAnim.timeout);
-  if (activeAnim.el.parentNode) activeAnim.el.remove();
-  activeAnim = null;
-}
-
-function animatePiece(piece, fromSq, toSq, onDone) {
-  const board = document.querySelector('.chess-board');
-  if (!board || !piece) { onDone(); return; }
-
-  const size = board.offsetWidth / 8;
-  function sqPos(sq) {
-    const fi   = sq.charCodeAt(0) - 97;
-    const rank = parseInt(sq[1]);
-    return {
-      x: (flipped ? 7 - fi   : fi)       * size,
-      y: (flipped ? rank - 1 : 8 - rank) * size,
-    };
-  }
-
-  const from = sqPos(fromSq);
-  const to   = sqPos(toSq);
-
-  const el = document.createElement('span');
-  el.className = `piece ${piece === piece.toUpperCase() ? 'w' : 'b'}`;
-  el.textContent = PIECE_UNICODE[piece] || '';
-  Object.assign(el.style, {
-    position:       'absolute',
-    left:           from.x + 'px',
-    top:            from.y + 'px',
-    width:          size + 'px',
-    height:         size + 'px',
-    display:        'flex',
-    alignItems:     'center',
-    justifyContent: 'center',
-    zIndex:         '20',
-    pointerEvents:  'none',
-    transition:     'left 0.16s cubic-bezier(0.25,0.1,0.25,1), top 0.16s cubic-bezier(0.25,0.1,0.25,1)',
+  cg = Chessground(wrap, {
+    fen: START_FEN,
+    orientation: flipped ? 'black' : 'white',
+    viewOnly: true,
+    coordinates: true,
+    highlight: { lastMove: false, check: true },  // on gère le last-move via shapes colorées
+    animation: { enabled: true, duration: 200 },
+    drawable: {
+      enabled: false,
+      visible: true,
+      autoShapes: [],
+      brushes,
+    },
   });
-  board.appendChild(el);
-
-  el.getBoundingClientRect(); // force reflow
-  el.style.left = to.x + 'px';
-  el.style.top  = to.y + 'px';
-
-  const done = () => { el.remove(); activeAnim = null; onDone(); };
-  el.addEventListener('transitionend', done, { once: true });
-  activeAnim = { el, timeout: setTimeout(done, 350) };
 }
 
 // ── Eval helpers ──────────────────────────────────────────────────
@@ -304,56 +162,47 @@ function formatEval(cp) {
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 function goToMove(idx) {
-  const prevHalfMove = currentHalfMove;
   const moves = gameData.moves;
   currentHalfMove = Math.max(0, Math.min(moves.length, idx));
-  const step = currentHalfMove - prevHalfMove;
 
   const fen = currentHalfMove === 0
     ? START_FEN
-    : (moves[currentHalfMove - 1].fen_after || null);
+    : (moves[currentHalfMove - 1].fen_after || START_FEN);
 
   let lastMove = null;
+  let classification = null;
+  let bestUci = null;
+  let playedUci = null;
   if (currentHalfMove > 0) {
     const m = moves[currentHalfMove - 1];
     if (m.uci && m.uci.length >= 4) {
       lastMove = [m.uci.slice(0, 2), m.uci.slice(2, 4)];
     }
+    classification = m.classification;
+    bestUci  = m.best_move_uci;
+    playedUci = m.uci;
   }
 
-  const classification = currentHalfMove > 0 ? moves[currentHalfMove - 1].classification : null;
-
-  cancelAnim();
-
-  // Calcul animation (seulement pour pas-à-pas)
-  let animFrom = null, animTo = null, animPiece = null;
-  if (Math.abs(step) === 1) {
-    if (step === 1 && currentHalfMove > 0) {
-      // Avance : pièce de src vers dst
-      const m = moves[currentHalfMove - 1];
-      animFrom = m.uci.slice(0, 2);
-      animTo   = m.uci.slice(2, 4);
-      const prevFen = currentHalfMove > 1 ? moves[currentHalfMove - 2].fen_after : START_FEN;
-      animPiece = getPieceAt(prevFen, animFrom);
-    } else if (step === -1 && prevHalfMove > 0) {
-      // Recul : pièce de dst vers src
-      const m = moves[prevHalfMove - 1];
-      animFrom = m.uci.slice(2, 4);
-      animTo   = m.uci.slice(0, 2);
-      animPiece = getPieceAt(moves[prevHalfMove - 1].fen_after, animFrom);
-    }
+  // Shapes : cases src/dst colorées par classification + flèche best move
+  const shapes = [];
+  if (lastMove && classification && classification !== 'n/a' && CLASSIF_HEX[classification]) {
+    shapes.push({ orig: lastMove[0], brush: 'cls-' + classification });
+    shapes.push({ orig: lastMove[1], brush: 'cls-' + classification });
+  }
+  if (bestUci && bestUci !== playedUci && bestUci.length >= 4) {
+    shapes.push({
+      orig: bestUci.slice(0, 2),
+      dest: bestUci.slice(2, 4),
+      brush: 'bestmove',
+    });
   }
 
-  renderBoard(fen, lastMove, classification, animPiece ? animTo : null);
-  if (animPiece) animatePiece(animPiece, animFrom, animTo, () => revealPieceAt(animTo));
-
-  // Flèche meilleur coup
-  if (currentHalfMove > 0) {
-    const m = moves[currentHalfMove - 1];
-    renderArrow(m.best_move_uci, m.uci);
-  } else {
-    renderArrow(null, null);
-  }
+  cg.set({
+    fen,
+    lastMove,
+    orientation: flipped ? 'black' : 'white',
+    drawable: { autoShapes: shapes },
+  });
 
   // Eval bar
   const cp = currentHalfMove === 0 ? 0 : (moves[currentHalfMove - 1].eval_after ?? 0);
@@ -556,10 +405,10 @@ async function init() {
         <div class="player-color-dot" id="player-bot-dot"></div>
       </div>
       <div class="board-controls">
-        <button class="ctrl-btn" onclick="goToMove(0)" title="Début ↑">⏮</button>
-        <button class="ctrl-btn" onclick="goToMove(currentHalfMove-1)" title="← Précédent">◀</button>
-        <button class="ctrl-btn" onclick="goToMove(currentHalfMove+1)" title="Suivant →">▶</button>
-        <button class="ctrl-btn" onclick="goToMove(gameData.moves.length)" title="Fin ↓">⏭</button>
+        <button class="ctrl-btn" onclick="goStart()" title="Début ↑">⏮</button>
+        <button class="ctrl-btn" onclick="goPrev()" title="← Précédent">◀</button>
+        <button class="ctrl-btn" onclick="goNext()" title="Suivant →">▶</button>
+        <button class="ctrl-btn" onclick="goEnd()" title="Fin ↓">⏭</button>
         <button class="ctrl-btn flip-btn" onclick="toggleFlip()" title="Retourner (F)">⇅</button>
       </div>
     </div>
@@ -589,11 +438,21 @@ async function init() {
 
   flipped = gameData.meta.player_color === 'black';
 
+  initBoard();
   renderGameHeader();
   renderMoveList();
   goToMove(0);
   initChart();
 }
+
+// Expose pour les onclick inline (le script est un module → scope isolé)
+window.goToMove       = goToMove;
+window.toggleFlip     = toggleFlip;
+window.refreshCoaching = refreshCoaching;
+window.goStart = () => goToMove(0);
+window.goPrev  = () => goToMove(currentHalfMove - 1);
+window.goNext  = () => goToMove(currentHalfMove + 1);
+window.goEnd   = () => goToMove(gameData ? gameData.moves.length : 0);
 
 init();
 </script>

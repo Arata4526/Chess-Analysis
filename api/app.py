@@ -8,6 +8,7 @@ Chess Analysis API
 
 import io
 import json
+import math
 import os
 import threading
 import time
@@ -39,11 +40,12 @@ HEADERS = {
 }
 
 STOCKFISH_LIMITS = {
-    "bullet": chess.engine.Limit(time=0.10),
-    "blitz":  chess.engine.Limit(time=0.15),
-    "rapid":  chess.engine.Limit(time=0.30),
-    "daily":  chess.engine.Limit(depth=15),
+    "bullet": chess.engine.Limit(time=0.5),
+    "blitz":  chess.engine.Limit(time=1.0),
+    "rapid":  chess.engine.Limit(time=1.5),
+    "daily":  chess.engine.Limit(depth=18),
 }
+ON_DEMAND_LIMIT = chess.engine.Limit(depth=20)
 
 # statut des analyses en cours : uuid -> "pending"|"done"|"error"
 analysis_jobs: dict[str, str] = {}
@@ -56,13 +58,26 @@ def score_to_cp(score):
         return 10000 if score.mate() > 0 else -10000
     return score.score()
 
-def classify_move(cp_loss):
-    if cp_loss <= 10:   return "best"
-    if cp_loss <= 25:   return "excellent"
-    if cp_loss <= 50:   return "good"
-    if cp_loss <= 100:  return "inaccuracy"
-    if cp_loss <= 200:  return "mistake"
-    return "blunder"
+def winrate(cp):
+    """Probabilité de gain 0-100 selon la formule Lichess (sigmoïde sur cp)."""
+    cp = max(-1000, min(1000, cp))
+    return 50 + 50 * (2 / (1 + math.exp(-0.004 * cp)) - 1)
+
+def classify_move(eval_before_white, eval_after_white, mover_was_white):
+    """Classifie depuis la perspective du joueur qui vient de jouer.
+    Retourne (classification, winrate_delta) — delta positif = winrate perdu."""
+    sign = 1 if mover_was_white else -1
+    delta = winrate(sign * eval_before_white) - winrate(sign * eval_after_white)
+    if delta < 2:    return "best",       delta
+    if delta < 5:    return "excellent",  delta
+    if delta < 10:   return "good",       delta
+    if delta < 20:   return "inaccuracy", delta
+    if delta < 30:   return "mistake",    delta
+    return "blunder", delta
+
+def move_accuracy(winrate_delta):
+    """Accuracy par coup 0-100 (formule Lichess CAPS)."""
+    return max(0, min(100, 103.1668 * math.exp(-0.04354 * winrate_delta) - 3.1668))
 
 def get_phase(half_move):
     n = half_move // 2 + 1
@@ -101,11 +116,13 @@ def analyze_game(pgn_string, player_username, engine, time_class):
         info_after = engine.analyse(board, limit)
         eval_after = score_to_cp(info_after["score"].white())
 
-        if board.turn == chess.WHITE:
-            cp_loss = max(0, eval_after - eval_before)
-        else:
+        mover_was_white = (board.turn == chess.BLACK)  # board.turn = qui joue ensuite
+        if mover_was_white:
             cp_loss = max(0, eval_before - eval_after)
+        else:
+            cp_loss = max(0, eval_after - eval_before)
 
+        classification, wr_delta = classify_move(eval_before, eval_after, mover_was_white)
         is_player_move = (board.turn != player_color)
 
         best_san = san
@@ -130,7 +147,8 @@ def analyze_game(pgn_string, player_username, engine, time_class):
             "best_move_san":  best_san,
             "best_move_uci":  best_move_obj.uci() if best_move_obj else uci,
             "cp_loss":        cp_loss,
-            "classification": classify_move(cp_loss),
+            "winrate_delta":  round(wr_delta, 2),
+            "classification": classification if is_player_move else "n/a",
             "phase":          get_phase(idx),
             "is_player_move": is_player_move,
         })
@@ -162,8 +180,8 @@ def build_game_report(raw_game, analyses, username):
     mistakes     = sum(1 for m in player_moves if m["classification"] == "mistake")
     inaccuracies = sum(1 for m in player_moves if m["classification"] == "inaccuracy")
 
-    total_cp = sum(m["cp_loss"] for m in player_moves)
-    accuracy = max(0, 100 - (total_cp / max(len(player_moves), 1) / 10))
+    accuracies = [move_accuracy(m.get("winrate_delta", 0)) for m in player_moves]
+    accuracy = sum(accuracies) / len(accuracies) if accuracies else 0
 
     worst = max(player_moves, key=lambda m: m["cp_loss"], default=None)
     worst_move = {
